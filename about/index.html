@@ -92,8 +92,12 @@
     <div id="toc-collapse" class="navbar-collapse collapse card bg-secondary">
         <ul class="nav flex-column">
             
-            <li class="nav-item" data-level="1"><a href="#_1" class="nav-link">关于作者</a>
+            <li class="nav-item" data-level="1"><a href="#_1" class="nav-link">关于</a>
               <ul class="nav flex-column">
+            <li class="nav-item" data-level="2"><a href="#_2" class="nav-link">笔试题解</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -101,7 +105,193 @@
 </div></div>
                     <div class="col-md-9" role="main">
 
-<h1 id="_1">关于作者</h1></div>
+<h1 id="_1">关于</h1>
+<h2 id="_2">笔试题解</h2>
+<h5 id="1-34-34-89-1-1-20-12-893434201211">1. 请针对有重复数字的数组设计⼀个快排算法，⽐如：[34, 34, 89, 1, 1, 20, 12]，排序后结果为 [89,34,34,20,12,1,1]</h5>
+<ul>
+<li>思路</li>
+<li>以最左边的树为基准</li>
+<li>将比基准数大的放在左边，比基准数小的放在右边</li>
+<li>
+<p>然后对左右分区分别重复上述步骤，直到区间内只有一个数</p>
+</li>
+<li>
+<p>代码</p>
+</li>
+</ul>
+<pre><code class="language-python">def quick_sort(nums):
+    n = len(nums)
+    def quick(left, right):
+        if left &gt;= right:
+            return nums
+        pivot, i, j = left, left, right
+        while i &lt; j:
+            while i &lt; j and nums[j] &lt; nums[pivot]:
+                j -= 1
+            while i &lt; j and nums[i] &gt;= nums[pivot]:
+                i += 1
+            nums[i], nums[j] = nums[j], nums[i]
+        nums[j], nums[pivot] = nums[pivot], nums[j]
+        quick(left, j-1)
+        quick(j+1, right)
+        return nums
+
+    return quick(0, n-1)
+
+def test_quick_sort(case_list):
+    for input_nums, out_nums in case_list:
+        assert (quick_sort(input_nums) == out_nums), '%s Error' % (input_nums)
+
+
+if __name__ == '__main__':
+    case_list = [
+      ([1,2,3,4], [4,3,2,1]),
+      ([[34, 34, 89, 1, 1, 20, 12], [89, 34, 34, 20, 12, 1, 1]]),
+      ([5,5,6,4,4], [6,5,5,4,4]),
+    ]
+    test_quick_sort(case_list)
+</code></pre>
+<h5 id="2-redis">2. 请利⽤Redis 实现⼀个通⽤分布式锁，并说明您设计⽅案的优点以及还有哪些需要改进的地⽅；</h5>
+<ul>
+<li>思路</li>
+</ul>
+<p>redis的set nx ex 设置分布式锁，加锁代码执行完释放锁，
+nx：key无值时设置成功，有值时设置返回失败
+ex：超时自动释放锁（防止网络抖动释放失败)</p>
+<ul>
+<li>代码</li>
+</ul>
+<pre><code class="language-python">import traceback
+import time
+import logging
+from contextlib import contextmanager
+import redis
+import thread
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s: - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S')
+ch.setFormatter(formatter)
+ch.setLevel(logging.DEBUG)
+logger.addHandler(ch)
+redis_cli = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+
+class DLock(object):
+
+    DEFAULT_TIMEOUT = 30
+
+    def __init__(self, redic_cli, key):
+        self.redic_cli = redic_cli
+        self.key = key
+        self.default_value = 'awesome'
+
+    def acquire(self, timeout=0, interval=0):
+        ''' acquire dlock '''
+
+        timeout = self.DEFAULT_TIMEOUT if timeout == 0 else timeout
+
+        if interval == 0:
+            interval = 0.5
+        end_time = time.time() + timeout
+        while time.time() &lt; end_time:
+            ret = self._acquire(timeout)
+            if ret:
+                return 0
+            logger.debug(&quot;wait ...&quot;)
+            time.sleep(interval)
+
+        logger.error(&quot;acquire dlock [%s] failed&quot;, self.key)
+
+        return -1
+
+    def _acquire(self, timeout):
+        return self.redic_cli.set(self.key, self.default_value, ex=timeout, nx=True)
+
+    def release(self):
+        return self.redic_cli.delete(self.key)
+
+
+@contextmanager
+def dlock(redis_cli, key, timeout=0, interval=0):
+    ''' one distributed lock '''
+    lock = DLock(redis_cli, key)
+    try:
+        ret = lock.acquire(timeout, interval=interval)
+        try:
+            yield ret == 0
+        except:
+            logger.critical(&quot;yield exits with exception: %s&quot; % traceback.format_exc())
+    finally:
+        lock.release()
+
+def pay_order(order_no, order_process_time, no):
+    with dlock(redis_cli, order_no, timeout=3):
+        logger.info(&quot;create order start %s&quot;, no)
+        time.sleep(order_process_time)
+        logger.info(&quot;create order end %s&quot;, no)
+        return 0
+
+def main():
+    order_no = 'ord-345'
+    thread.start_new_thread(pay_order, (order_no, 2, 1))
+    thread.start_new_thread(pay_order, (order_no, 5, 2))
+    thread.start_new_thread(pay_order, (order_no, 2, 3))
+    thread.start_new_thread(pay_order, (order_no, 5, 4))
+
+    while True:
+        pass
+
+if __name__ == '__main__':
+    main()
+</code></pre>
+<ul>
+<li>优点</li>
+<li>方案上考虑到了网络抖动导致锁释放失败，其他线程永远获取不到此锁了。</li>
+<li>
+<p>利用 set ex nx命令的原子性，避免了设置没有ttl的锁</p>
+</li>
+<li>
+<p>改进</p>
+</li>
+<li>锁的ttl依赖经验判断程序大概执行时间，一旦加锁逻辑超时还未执行完，其他线程访问此资源会竞争。可考虑起一个后台线程监控程序执行情况，自动续期</li>
+<li>线程A的锁可能被线程B释放，可考虑加锁时带上线程自己独有的值，比如线程A的逻辑执行超时，锁自动释放了，然后线程B拿到锁，后续线程A执行完后释放锁释放了B申请的锁</li>
+<li>redis宕机或主从切换时会发生数据丢失，此时锁效果就没了，可以考虑红锁</li>
+</ul>
+<h5 id="3-n-1-818233">3. 编程题：有⼀堆糖果，其数量为n，现将糖果分成不同数量的堆数（每堆数量均为整数，最少为 1），请算出糖果堆对应数量的最⼤乘积是多少，并给出对应的分配⽅案； 举例：糖果数量为8，可以得到的乘积最⼤为18，对应的分配⽅案为【2，3，3】；</h5>
+<p>...</p>
+<h4 id="4-pv11">4. 假设需要设计⼀个承担百万级pv（⽤户总数1千万，每⽇⽤户⾏为⽇志数据预计1亿条）的电商⽹ 站登录系统，你的服务器技术架构是怎么样的？⽤户信息的存储⽅案⼜会如何设计？如果由你来进⾏ 系统整体技术负责，你会如何去把控整体开发进度和协调各⽅⾯资源?</h4>
+<ul>
+<li>架构
+多节点nginx -&gt; 多节点api server -&gt; 多节点业务子服务 -&gt; 高可用cache -&gt; 高可用db集群</li>
+</ul>
+<p>nginx: 轮询模式访问 api server
+api server: 令牌桶算法算法全局限流，并对用户api设置访问计数控制
+cache: redis, 存储用户登录信息
+db: 用户及用户相关数据可能要做时间纵向的冷热分离、横向的hash切片</p>
+<p>用户头像、验证码及其他多媒体文件存储在oss，并用cdn缓存</p>
+<p>采用消息队列处理用户登录的异步逻辑，比如用户初始化后的其他子服务业务逻辑初始化等</p>
+<ul>
+<li>存储方案</li>
+</ul>
+<p>redis</p>
+<ul>
+<li>
+<p>协调开发进度及资源</p>
+</li>
+<li>
+<p>首先进行业务分析和，需求拆解，初步识别核心流程模块、重点要攻坚的大数据、高并发模块</p>
+</li>
+<li>基本统一意见后开始统一选型技术栈</li>
+<li>设计接口，设计数据库模型，识别高并发模块，并设计缓存架构（中间件？本地？高可用？）以及缓存的数据结构</li>
+<li>3进行同时可协调开始代码架构、以及开发环境的搭建</li>
+<li>实现核心主线逻辑、并构建工具类、测试类的项目骨架</li>
+<li>根据设计的接口及模块拆分给不同的组员，并合理预估工时、规划好进度</li>
+<li>有序迭代需求，重构冲突并演进架构</li>
+</ul></div>
             </div>
         </div>
 
